@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\MutasiPersediaans\Schemas;
 
+use App\Models\Produk;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -14,13 +15,33 @@ class MutasiPersediaanForm
     {
         return $schema
             ->components([
-                TextInput::make('kode_barang')
-                    ->label('Kode Barang')
+                Select::make('produk_id')
+                    ->label('Produk')
+                    ->options(fn () => Produk::query()
+                        ->where('is_aktif', true)
+                        ->orderBy('nama_produk')
+                        ->pluck('nama_produk', 'id')
+                        ->toArray())
+                    ->searchable()
+                    ->preload()
+                    ->required()
+                    ->live()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        $produk = $state ? Produk::find($state) : null;
+
+                        $set('kode_produk', $produk?->kode_produk);
+                        $set('nama_produk', $produk?->nama_produk);
+                        $set('satuan', $produk?->satuan ?? 'pcs');
+                        $set('harga', $produk?->harga_beli ?? null);
+                    }),
+
+                TextInput::make('kode_produk')
+                    ->label('Kode Produk')
                     ->required()
                     ->maxLength(255),
 
-                TextInput::make('nama_barang')
-                    ->label('Nama Barang')
+                TextInput::make('nama_produk')
+                    ->label('Nama Produk')
                     ->required()
                     ->maxLength(255),
 

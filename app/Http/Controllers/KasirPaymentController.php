@@ -3,14 +3,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\DetailPenjualan;
-use App\Models\MutasiPersediaan;
 use App\Models\Penjualan;
-use App\Models\Produk;
-use App\Services\JournalPoster;
 use App\Services\MidtransService;
+use App\Services\PenjualanFinalizer;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class KasirPaymentController extends Controller
 {
@@ -71,7 +67,7 @@ class KasirPaymentController extends Controller
         ]);
     }
 
-    public function finish(Request $request, MidtransService $midtrans, JournalPoster $poster)
+    public function finish(Request $request, MidtransService $midtrans, PenjualanFinalizer $finalizer)
     {
         $orderId = (string) $request->query('order_id', '');
         $result  = (string) $request->query('result', '');
@@ -121,68 +117,7 @@ class KasirPaymentController extends Controller
 
         // 2) FINALIZE (idempotent) -> detail + mutasi + jurnal (cuma sekali)
         if ($penjualan->payment_status === 'PAID' && empty($penjualan->posted_at)) {
-
-            DB::transaction(function () use ($penjualan, $poster) {
-                $snapshot = $penjualan->cart_snapshot ?? null;
-                $items = [];
-
-                if (is_string($snapshot) && $snapshot !== '') {
-                    $items = json_decode($snapshot, true) ?: [];
-                }
-
-                // Guard anti transaksi hantu
-                if (empty($items)) {
-                    return;
-                }
-
-                // Anti double detail/mutasi: kalau sudah ada detail, skip create ulang
-                $already = DetailPenjualan::query()
-                    ->where('penjualan_id', $penjualan->id)
-                    ->exists();
-
-                if (!$already) {
-                    foreach ($items as $row) {
-                        $produkId = (int) ($row['produk_id'] ?? 0);
-                        $qty      = (int) ($row['qty'] ?? 0);
-                        if ($produkId <= 0 || $qty <= 0) continue;
-
-                        $produk = Produk::where('is_aktif', true)->findOrFail($produkId);
-
-                        $mutasi = MutasiPersediaan::create([
-                            'produk_id'   => $produk->id,
-                            'kode_produk' => $produk->kode_produk,
-                            'nama_produk' => $produk->nama_produk,
-                            'satuan'      => $produk->satuan ?? 'pcs',
-                            'qty'         => $qty,
-                            'tipe'        => MutasiPersediaan::TIPE_KELUAR,
-                            'ref_tipe'    => 'PENJUALAN',
-                            'ref_id'      => $penjualan->id,
-                            // HPP: sementara pakai harga_beli
-                            'harga'       => (float) ($produk->harga_beli ?? 0),
-                            'tanggal'     => $penjualan->tanggal,
-                            'keterangan'  => $penjualan->kode_penjualan,
-                        ]);
-
-                        $hargaJual = (float) ($row['harga_jual'] ?? $produk->harga_jual ?? 0);
-
-                        DetailPenjualan::create([
-                            'penjualan_id'         => $penjualan->id,
-                            'mutasi_persediaan_id' => $mutasi->id,
-                            'qty'                  => $qty,
-                            'harga'                => $hargaJual,
-                            'subtotal'             => $hargaJual * $qty,
-                        ]);
-                    }
-                }
-
-                $penjualan->load(['details.mutasiPersediaan']);
-
-                // Midtrans = uang masuk via "bank"
-                $poster->postPenjualan($penjualan, 'bank');
-
-                $penjualan->posted_at = now();
-                $penjualan->save();
-            });
+            $finalizer->finalize($penjualan, 'bank');
 
             // 3) Clear cart session user (cuma bisa di finish/manual)
             $request->session()->forget('kasir_cart');
@@ -204,7 +139,7 @@ class KasirPaymentController extends Controller
      * Untuk kasus: Midtrans webhook gak bisa tembus localhost.
      * Tombol ini "memaksa" transaksi jadi PAID + menjalankan finalize (mutasi + detail + jurnal) lalu clear cart.
      */
-    public function manualSettle(Request $request, Penjualan $penjualan, JournalPoster $poster)
+    public function manualSettle(Request $request, Penjualan $penjualan, PenjualanFinalizer $finalizer)
     {
         // ✅ idempotent: kalau udah posted, langsung balik ke kasir
         if (!empty($penjualan->posted_at)) {
@@ -223,65 +158,8 @@ class KasirPaymentController extends Controller
         // catatan: ini manual, jadi transaction_id/payment_type mungkin null—gapapa sementara
         $penjualan->save();
 
-        // finalize: detail + mutasi + jurnal
-        DB::transaction(function () use ($penjualan, $poster) {
-            $snapshot = $penjualan->cart_snapshot ?? null;
-            $items = [];
-
-            if (is_string($snapshot) && $snapshot !== '') {
-                $items = json_decode($snapshot, true) ?: [];
-            }
-
-            if (empty($items)) {
-                return;
-            }
-
-            $already = DetailPenjualan::query()
-                ->where('penjualan_id', $penjualan->id)
-                ->exists();
-
-            if (!$already) {
-                foreach ($items as $row) {
-                    $produkId = (int) ($row['produk_id'] ?? 0);
-                    $qty      = (int) ($row['qty'] ?? 0);
-                    if ($produkId <= 0 || $qty <= 0) continue;
-
-                    $produk = Produk::where('is_aktif', true)->findOrFail($produkId);
-
-                    $mutasi = MutasiPersediaan::create([
-                        'produk_id'   => $produk->id,
-                        'kode_produk' => $produk->kode_produk,
-                        'nama_produk' => $produk->nama_produk,
-                        'satuan'      => $produk->satuan ?? 'pcs',
-                        'qty'         => $qty,
-                        'tipe'        => MutasiPersediaan::TIPE_KELUAR,
-                        'ref_tipe'    => 'PENJUALAN',
-                        'ref_id'      => $penjualan->id,
-                        'harga'       => (float) ($produk->harga_beli ?? 0),
-                        'tanggal'     => $penjualan->tanggal,
-                        'keterangan'  => $penjualan->kode_penjualan . ' (MANUAL SETTLE)',
-                    ]);
-
-                    $hargaJual = (float) ($row['harga_jual'] ?? $produk->harga_jual ?? 0);
-
-                    DetailPenjualan::create([
-                        'penjualan_id'         => $penjualan->id,
-                        'mutasi_persediaan_id' => $mutasi->id,
-                        'qty'                  => $qty,
-                        'harga'                => $hargaJual,
-                        'subtotal'             => $hargaJual * $qty,
-                    ]);
-                }
-            }
-
-            $penjualan->load(['details.mutasiPersediaan']);
-
-            // manual settle juga anggap uang masuk via bank (karena "non-tunai")
-            $poster->postPenjualan($penjualan, 'bank', 'Manual settle (localhost webhook workaround)');
-
-            $penjualan->posted_at = now();
-            $penjualan->save();
-        });
+        // manual settle juga anggap uang masuk via bank (karena "non-tunai")
+        $finalizer->finalize($penjualan, 'bank', 'Manual settle (localhost webhook workaround)');
 
         // clear cart + idempotency
         $request->session()->forget('kasir_cart');
