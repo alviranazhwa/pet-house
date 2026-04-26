@@ -81,11 +81,8 @@ class BukuBesar extends Page implements HasForms
                     ->multiple()
                     ->searchable()
                     ->preload()
-<<<<<<< HEAD
                     // ->helperText('Kosongkan jika ingin tampilkan semua akun yang ada transaksi di periode.')
-=======
                     ->helperText('Kosongkan jika ingin tampilkan semua akun yang ada transaksi di periode.')
->>>>>>> 6c7a423e16e534a652802d3bdb328469ecf71a99
                     ->options(fn () => Akun::query()
                         ->where('is_aktif', true)
                         ->orderBy('kode_akun')

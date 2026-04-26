@@ -24,7 +24,7 @@ class AkunResource extends Resource
     protected static \UnitEnum|string|null $navigationGroup = 'Master Data';
 
     // TITLE RECORD
-    protected static ?string $recordTitleAttribute = 'nama';
+    protected static ?string $recordTitleAttribute = 'nama_akun';
 
     public static function getNavigationLabel(): string
     {
