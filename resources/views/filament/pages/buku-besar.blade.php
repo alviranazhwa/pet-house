@@ -20,9 +20,15 @@
                     Tampilkan
                 </x-filament::button>
 
+<<<<<<< HEAD
+                {{-- <x-filament::button wire:click="downloadPdf" color="gray">
+                    PDF (sesuai pilihan)
+                </x-filament::button> --}}
+=======
                 <x-filament::button wire:click="downloadPdf" color="gray">
                     PDF (sesuai pilihan)
                 </x-filament::button>
+>>>>>>> 6c7a423e16e534a652802d3bdb328469ecf71a99
             </div>
         </div>
     </x-filament::section>
