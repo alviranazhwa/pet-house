@@ -23,11 +23,8 @@ class JurnalDetailResource extends Resource
     protected static ?string $modelLabel = 'Jurnal Umum';
     protected static ?string $pluralModelLabel = 'Jurnal Umum';
 
-<<<<<<< HEAD
     protected static bool $shouldRegisterNavigation = false;
 
-=======
->>>>>>> 6c7a423e16e534a652802d3bdb328469ecf71a99
     /**
      * IMPORTANT:
      * - Join ke tabel jurnal buat sorting default yang stabil (tanggal + nomor_jurnal)
