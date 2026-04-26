@@ -8,5 +8,5 @@ return [
     'is_3ds'         => (bool) env('MIDTRANS_3DS', true),
 
     // URL redirect user setelah bayar (finish/unfinish/error)
-    'finish_url'     => env('MIDTRANS_FINISH_URL', '/kasir/payment/finish'),
+    'finish_url'     => env('MIDTRANS_FINISH_URL', '/kasir/finish'),
 ];
